@@ -2,7 +2,7 @@ import telebot
 from datetime import datetime
 import pymorphy2
 
-bot = telebot.TeleBot('5365438885:AAEgTY3EQHx4wzM8J6ChnyMOB-BFnBXV0Hc')
+bot = telebot.TeleBot('Вставь токен бота')
 
 @bot.message_handler(commands=['start'])
 def start(message):
