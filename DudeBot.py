@@ -2,19 +2,20 @@ from aiogram import Bot, Dispatcher, types
 from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters.state import State, StatesGroup
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
-from aiogram.types import *
 from aiogram.utils import executor
 import asyncio
-import aioschedule
 from datetime import datetime as dt
-import pymorphy2
 import re
+import shelve
+import pymorphy3
+from aiogram.utils.exceptions import TelegramAPIError
+import random
 
 storage = MemoryStorage()
-bot = Bot(token="ТОКЕН ВАШЕГО БОТА")
+bot = Bot(token="YOUR BOT TOKEN CODE")
 dp = Dispatcher(bot, storage=storage)
 
-class UserState(StatesGroup): #Класс состояний пользователя для регистрации шагов игры в WEDNESDAY
+class UserState(StatesGroup):
     turnE1 = State()
     turnN = State()
     turnS = State()
@@ -25,26 +26,60 @@ class UserState(StatesGroup): #Класс состояний пользоват�
     turnD2 = State()
     turnY = State()
 
-@dp.message_handler(commands=['start']) #Приветствие при запуске бота.
-async def process_start_command(message: types.Message):
-    await bot.send_message(message.chat.id, "Привет! \nЯ Чювак бот, и я люблю среды.")
+@dp.message_handler(commands=['start'])
+async def start_command(message: types.Message):
+    # Сохраняем chat_id в файл по команде /start
+    with shelve.open('chat_ids') as db:
+        chat_ids = db.get('chat_ids', [])
+        if message.chat.id not in chat_ids:
+            chat_ids.append(message.chat.id)
+            db['chat_ids'] = chat_ids
+    await message.answer("Привет! \nЯ Чювак бот, и я люблю среды.")
 
-@dp.message_handler(commands=['chat']) #Команда получения ID чата для отправки жаю по средам. ID чатов пока что хардкодятся.
-async def process_start_command(message: types.Message):
-    await bot.send_message(message.chat.id, message.chat.id)
+async def everyday_text(message: types.Message):  # Возвращает текст, если видит слово "среда" в любых формах. В среду и в остальные дни недели тексты отличаются.
+    morph = pymorphy3.MorphAnalyzer()
+    opt = re.sub(r'[^\w\s]', '', message.text)
+    lst = opt.split()
+    results = []
+    for i in lst:
+        parsed = morph.parse(i)
+        norm_form = parsed[0].normal_form
+        results.append(norm_form)
+    if "среда" in results and dt.today().weekday() != 2:
+        await bot.send_message(message.chat.id, "Среда – лучший день недели!\nОчень жду среду.", parse_mode='html')
+    if "среда" in results and dt.today().weekday() == 2:
+        await bot.send_message(message.chat.id, "It's Wednesday, my dudes!", parse_mode='html')
+    if "понедельник" in results:
+        await bot.send_message(message.chat.id, "Понедельник – это, конечно, хорошо.\nНо среду я люблю больше.",
+                               parse_mode='html')
+    if "вторник" in results:
+        await bot.send_message(message.chat.id, "Вторник – это, конечно, хорошо.\nНо среду я люблю больше.",
+                               parse_mode='html')
+    if "четверг" in results:
+        await bot.send_message(message.chat.id, "Четверг – это, конечно, хорошо.\nНо среду я люблю больше.",
+                               parse_mode='html')
+    if "пятница" in results:
+        await bot.send_message(message.chat.id, "Пятница – это, конечно, хорошо.\nНо среду я люблю больше.",
+                               parse_mode='html')
+    if "суббота" in results:
+        await bot.send_message(message.chat.id, "Суббота – это, конечно, хорошо.\nНо среду я люблю больше.",
+                               parse_mode='html')
+    if "воскресение" in results:
+        await bot.send_message(message.chat.id, "Воскресенье – это, конечно, хорошо.\nНо среду я люблю больше.",
+                               parse_mode='html')
 
 @dp.message_handler()
-async def game_ft(message: types.Message):
-     if message.text.lower() == "w": # Игра в WEDNESDAY по буквам. Юзер ходит первый.
+async def game_ft(message: types.Message):# Игра в WEDNESDAY по буквам. Юзер ходит первый.
+     if message.text.lower() == "w":
         await bot.send_message(message.chat.id, "E", parse_mode='html')
         await UserState.turnN.set()
-     elif "играть" in message.text.lower(): # Игра в WEDNESDAY по буквам. Бот ходит первый.
+     elif "играть" in message.text.lower():
         await bot.send_message(message.chat.id, "Сыграем в WEDNESDAY? Я хожу первый.", parse_mode='html')
         await bot.send_message(message.chat.id, "W", parse_mode='html')
         await UserState.turnD.set()
      else:
         await everyday_text(message) # Возвращает текст, если видит слово "среда" в любых формах. В среду и в остальные дни недели тексты отличаются.
-#Ниже, в хендлерах со стейтами описаны шаги игры в WEDNESDAY.
+
 @dp.message_handler(state=UserState.turnE1)
 async def fturnE1(message: types.Message, state: FSMContext):
         await bot.send_message(message.chat.id, "E", parse_mode='html')
@@ -103,6 +138,7 @@ async def fturnD(message: types.Message, state: FSMContext):
     else:
        await bot.send_message(message.chat.id, "Ты проиграл.", parse_mode='html')
        await state.finish()
+
 @dp.message_handler(state=UserState.turnE2)
 async def fturnE2(message: types.Message, state: FSMContext):
     if message.text.lower() == "n":
@@ -134,42 +170,28 @@ async def fturnY(message: types.Message, state: FSMContext):
        await bot.send_message(message.chat.id, "Ты проиграл.", parse_mode='html')
        await state.finish()
 
-async def everyday_text(message: types.Message): # Возвращает текст, если видит слово "среда" в любых формах. В среду и в остальные дни недели тексты отличаются.
-     morph = pymorphy2.MorphAnalyzer()
-     opt = re.sub(r'[^\w\s]', '', message.text)
-     lst = opt.split()
-     results = []
-     for i in lst:
-       parsed = morph.parse(i)
-       norm_form = parsed[0].normal_form
-       results.append(norm_form)
-     if "среда" in results and dt.today().weekday() != 2:
-       await bot.send_message(message.chat.id, "Среда – лучший день недели!\nОчень жду среду.", parse_mode='html')
-     if "среда" in results and dt.today().weekday() == 2:
-       await bot.send_message(message.chat.id, "Среда – лучший день недели!", parse_mode='html')
-     if "понедельник" in results:
-       await bot.send_message(message.chat.id, "Понедельник – это, конечно, хорошо.\nНо среду я люблю больше.", parse_mode='html')
-     if "вторник" in results:
-       await bot.send_message(message.chat.id, "Вторник – это, конечно, хорошо.\nНо среду я люблю больше.", parse_mode='html')
-     if "четверг" in results:
-       await bot.send_message(message.chat.id, "Четверг – это, конечно, хорошо.\nНо среду я люблю больше.", parse_mode='html')
-     if "пятница" in results:
-       await bot.send_message(message.chat.id, "Пятница – это, конечно, хорошо.\nНо среду я люблю больше.", parse_mode='html')
-     if "суббота" in results:
-       await bot.send_message(message.chat.id, "Суббота – это, конечно, хорошо.\nНо среду я люблю больше.", parse_mode='html')
-     if "воскресение" in results:
-       await bot.send_message(message.chat.id, "Воскресенье – это, конечно, хорошо.\nНо среду я люблю больше.", parse_mode='html')
+# Функция, которая отправляет стикер во все сохранённые чаты
+async def send_random_sticker():
+    with shelve.open('chat_ids') as db:
+        chat_ids = db.get('chat_ids', [])
+    sticker_pack = "dudestrasse"
+    stickers = await bot.get_sticker_set(sticker_pack)
+    for chat_id in chat_ids:
+        try:
+            sticker_id = random.choice(stickers.stickers).file_id
+            await bot.send_sticker(chat_id, sticker_id)
+        except TelegramAPIError as e:
+            print(f"Sending the message to chat {chat_id} is {e}")
+            continue
 
-async def wed_pic(): #Функция отправки жаб в разные чаты. ID чатов пока что хардкодятся.
-     await bot.send_sticker(ТУТ ЧАТ АЙДИ, r'CAACAgIAAxkBAAEFfvNi8Anx-hCR7AMEed1TG5g1zRP7uAACPgQAArBhXgMBlldWjYQJMikE')
-     await bot.send_sticker(ТУТ ЧАТ АЙДИ 2, r'CAACAgIAAxkBAAEFfvNi8Anx-hCR7AMEed1TG5g1zRP7uAACPgQAArBhXgMBlldWjYQJMikE')
-     await bot.send_sticker(ТУТ ЧАТ АЙДИ N, r'CAACAgIAAxkBAAEFfvNi8Anx-hCR7AMEed1TG5g1zRP7uAACPgQAArBhXgMBlldWjYQJMikE')
-
-async def scheduler(): #Расписание отправки жаб с циклом для постоянного выполнения.
-    aioschedule.every().wednesday.at("00:00").do(wed_pic)
+# Запускаем функцию send_sticker каждую среду в 9:00
+async def scheduler():
     while True:
-        await aioschedule.run_pending()
-        await asyncio.sleep(1)
+        now = dt.now()
+        if now.weekday() == 2 and now.hour == 9 and now.minute == 0:
+            await send_random_sticker()
+        await asyncio.sleep(60 - now.second)
+
 if __name__ == '__main__':
         loop = asyncio.get_event_loop()
         loop.create_task(scheduler())
